@@ -1,0 +1,94 @@
+[
+  {
+    "id": "T101",
+    "flow": "Design",
+    "name": "Design spec",
+    "description": "Write design specification",
+    "start": "2022-12-31",
+    "end": "2022-12-31",
+    "status": "complete",
+    "criteria": [
+      {
+        "taskCriteriaName": "coverage",
+        "taskCriteriaDatatype": "number",
+        "operator": ">=",
+        "value": "80"
+      }
+    ]
+  },
+  {
+    "id": "T102",
+    "flow": "QA",
+    "name": "QA",
+    "description": "Write QA",
+    "start": "2025-01-01",
+    "end": "2025-01-05",
+    "status": "incomplete",
+    "criteria": [
+      {
+        "taskCriteriaName": "QA_id",
+        "taskCriteriaDatatype": "number",
+        "operator": ">=",
+        "value": "80"
+      },
+      {
+        "taskCriteriaName": "QA_coverage",
+        "taskCriteriaDatatype": "string",
+        "operator": "==",
+        "value": "Hello"
+      },
+      {
+        "taskCriteriaName": "QA_owner",
+        "taskCriteriaDatatype": "boolean",
+        "operator": "==",
+        "value": "Hi"
+      }
+    ]
+  },
+  {
+    "id": "T103",
+    "flow": "Design",
+    "name": "Design spec",
+    "description": "Write design specification",
+    "start": "2025-11-19",
+    "end": "2025-11-20",
+    "status": "incomplete",
+    "criteria": [
+      {
+        "taskCriteriaName": "coverage",
+        "taskCriteriaDatatype": "number",
+        "operator": ">=",
+        "value": "80"
+      }
+    ]
+  },
+  {
+    "id": "T104",
+    "flow": "QA",
+    "name": "QA",
+    "description": "Write QA",
+    "start": "2025-11-04",
+    "end": "2025-11-06",
+    "status": "incomplete",
+    "criteria": [
+      {
+        "taskCriteriaName": "QA_id",
+        "taskCriteriaDatatype": "number",
+        "operator": ">=",
+        "value": "80"
+      },
+      {
+        "taskCriteriaName": "QA_coverage",
+        "taskCriteriaDatatype": "string",
+        "operator": "==",
+        "value": "Hello"
+      },
+      {
+        "taskCriteriaName": "QA_owner",
+        "taskCriteriaDatatype": "boolean",
+        "operator": "==",
+        "value": "Hi"
+      }
+    ]
+  }
+]
