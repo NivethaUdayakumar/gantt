@@ -50,8 +50,8 @@
     "flow": "Design",
     "name": "Design spec",
     "description": "Write design specification",
-    "start": "2025-11-19",
-    "end": "2025-11-20",
+    "start": "2025-11-18",
+    "end": "2025-11-19",
     "status": "incomplete",
     "criteria": [
       {
@@ -88,6 +88,23 @@
         "taskCriteriaDatatype": "boolean",
         "operator": "==",
         "value": "Hi"
+      }
+    ]
+  },
+  {
+    "id": "T105",
+    "flow": "Design",
+    "name": "Design spec",
+    "description": "Write design specification",
+    "start": "2025-11-18",
+    "end": "2025-11-19",
+    "status": "incomplete",
+    "criteria": [
+      {
+        "taskCriteriaName": "coverage",
+        "taskCriteriaDatatype": "number",
+        "operator": ">=",
+        "value": "80"
       }
     ]
   }
