@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Project Gantt Tracker</title>
 
-  <!-- You can switch this to local file if you prefer -->
+  <!-- Frappe Gantt CDN CSS -->
   <link
     rel="stylesheet"
     href="https://cdn.jsdelivr.net/npm/frappe-gantt/dist/frappe-gantt.css"
@@ -113,6 +113,7 @@
 
     input[type="text"],
     input[type="date"],
+    input[type="number"],
     select,
     textarea {
       border-radius: 8px;
@@ -207,6 +208,20 @@
       box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.18);
     }
 
+    /* new: flow filter styling */
+    .gantt-filter {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+    }
+
+    .gantt-filter select {
+      font-size: 12px;
+      padding: 4px 6px;
+      border-radius: 999px;
+    }
+
     #gantt-wrapper {
       height: 70vh;
       min-height: 420px;
@@ -238,19 +253,11 @@
       width: 10px;
       height: 10px;
       border-radius: 999px;
-      background: #3b82f6;
+      background: #60a5fa;
     }
 
     .legend-dot.done {
       background: #22c55e;
-    }
-
-    .legend-dot.future {
-      background: #9ca3af;
-    }
-
-    .legend-dot.danger {
-      background: #ef4444;
     }
 
     .chart-footer {
@@ -268,7 +275,7 @@
       font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       font-size: 12px;
       padding: 6px 8px 8px;
-      max-width: 280px;
+      max-width: 260px;
     }
 
     .details-container h5 {
@@ -301,54 +308,6 @@
       display: block;
     }
 
-    .criteria-header-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin: 6px 0;
-    }
-
-    .criteria-header-row h3 {
-      margin: 0;
-      font-size: 13px;
-    }
-
-    .criteria-row {
-      display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1.6fr) auto;
-      gap: 6px;
-      margin-bottom: 6px;
-      align-items: center;
-    }
-
-    .criteria-row select,
-    .criteria-row input {
-      font-size: 12px;
-      padding: 5px 8px;
-    }
-
-    .criteria-row button {
-      padding: 5px 8px;
-      font-size: 11px;
-    }
-
-    /* Gantt bar colors based on custom_class */
-    .gantt .bar-wrapper.bar-complete .bar {
-      fill: #22c55e;
-    }
-
-    .gantt .bar-wrapper.bar-incomplete .bar {
-      fill: #3b82f6;
-    }
-
-    .gantt .bar-wrapper.bar-future .bar {
-      fill: #9ca3af;
-    }
-
-    .gantt .bar-wrapper.bar-danger .bar {
-      fill: #ef4444;
-    }
-
     @media (max-width: 900px) {
       .layout {
         grid-template-columns: minmax(0, 1fr);
@@ -359,7 +318,7 @@
 <body>
   <header>
     <h1>Project Gantt Tracker</h1>
-    <span>Tasks and criteria stored in projectTasks.json, CSVs under /data</span>
+    <span>Uses /api/tasks to read and write projectTasks.json</span>
   </header>
 
   <main class="layout">
@@ -367,7 +326,7 @@
     <section class="card">
       <div class="card-header">
         <h2>Task editor</h2>
-        <span class="small">Status is stored with the task but not edited here</span>
+        <span class="small">Changes are saved to projectTasks.json via the API</span>
       </div>
       <div class="card-body">
         <form id="taskForm">
@@ -378,10 +337,7 @@
             </div>
             <div class="field">
               <label for="taskFlow">Task flow</label>
-              <select id="taskFlow">
-                <option value="">Select flow</option>
-              </select>
-              <span class="small">Flows come from CSV files in /data</span>
+              <input id="taskFlow" type="text" placeholder="Design, Backend, QA" />
             </div>
           </div>
 
@@ -391,7 +347,8 @@
               <input id="taskName" type="text" placeholder="Kickoff" required />
             </div>
             <div class="field">
-              <!-- Progress removed on purpose -->
+              <label for="taskProgress">Progress %</label>
+              <input id="taskProgress" type="number" min="0" max="100" value="0" />
             </div>
           </div>
 
@@ -413,14 +370,40 @@
 
           <hr style="border:none;border-top:1px solid var(--border);margin:10px 0 8px;" />
 
-          <div class="criteria-header-row">
-            <h3>Task criteria</h3>
-            <button type="button" id="addCriteriaBtn" class="small">
-              + Add criteria
-            </button>
+          <div class="field-row">
+            <div class="field">
+              <label for="critVar">Completion criteria - variable name</label>
+              <input id="critVar" type="text" placeholder="coverage" />
+            </div>
+            <div class="field">
+              <label for="critType">Data type</label>
+              <select id="critType">
+                <option value="">Not set</option>
+                <option value="number">Number</option>
+                <option value="string">String</option>
+                <option value="boolean">Boolean</option>
+              </select>
+            </div>
           </div>
 
-          <div id="criteriaList"></div>
+          <div class="field-row">
+            <div class="field">
+              <label for="critOp">Operator</label>
+              <select id="critOp">
+                <option value="">Not set</option>
+                <option value="&lt;">&lt;</option>
+                <option value="&lt;=">&lt;=</option>
+                <option value=">">&gt;</option>
+                <option value=">=">&gt;=</option>
+                <option value="==">==</option>
+                <option value="!=">!=</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="critValue">Value</label>
+              <input id="critValue" type="text" placeholder="80 or true or Approved" />
+            </div>
+          </div>
 
           <div class="btn-row">
             <button type="submit" class="primary">Save task</button>
@@ -434,7 +417,7 @@
           </div>
 
           <p class="small" style="margin-top:8px;">
-            API: GET /api/tasks and PUT /api/tasks read and write projectTasks.json.
+            API: GET /api/tasks and PUT /api/tasks (full array) read/write projectTasks.json.
           </p>
         </form>
       </div>
@@ -451,13 +434,20 @@
             <button data-mode="Month">Month</button>
             <button data-mode="Year">Year</button>
           </div>
+
           <button type="button" id="todayBtn">Scroll to today</button>
 
+          <!-- new: flow filter -->
+          <div class="gantt-filter">
+            <span>Flow</span>
+            <select id="flowFilter">
+              <option value="">All flows</option>
+            </select>
+          </div>
+
           <div class="legend">
-            <span><span class="legend-dot done"></span> complete</span>
-            <span><span class="legend-dot"></span> incomplete</span>
-            <span><span class="legend-dot future"></span> future</span>
-            <span><span class="legend-dot danger"></span> near due</span>
+            <span><span class="legend-dot"></span> normal</span>
+            <span><span class="legend-dot done"></span> done</span>
           </div>
         </div>
       </div>
@@ -473,7 +463,7 @@
     </section>
   </main>
 
-  <!-- Frappe Gantt JS -->
+  <!-- Frappe Gantt CDN JS -->
   <script src="https://cdn.jsdelivr.net/npm/frappe-gantt/dist/frappe-gantt.umd.js"></script>
 
   <script>
@@ -492,42 +482,11 @@
     let tasks = [];
     let gantt = null;
     let currentViewMode = "Day";
-
-    let flowColumnsCache = {}; // { flowName: [col1, col2, ...] }
-
-    function normalizeCriteria(criteriaRaw) {
-      if (!criteriaRaw) return [];
-
-      // If old format: single object, wrap into array
-      if (!Array.isArray(criteriaRaw)) {
-        criteriaRaw = [criteriaRaw];
-      }
-
-      return criteriaRaw.map(c => {
-        const safe = c || {};
-        const name =
-          safe.taskCriteriaName ||
-          safe.variable ||
-          safe.name ||
-          "";
-        const datatype =
-          safe.taskCriteriaDatatype ||
-          safe.type ||
-          safe.datatype ||
-          "";
-        return {
-          taskCriteriaName: String(name).trim(),
-          taskCriteriaDatatype: String(datatype).trim(),
-          operator: safe.operator || "",
-          value: safe.value != null ? String(safe.value) : ""
-        };
-      });
-    }
+    let currentFlowFilter = ""; // new: selected flow filter
 
     function normalizeTask(raw) {
       const safe = raw || {};
-      const status = (safe.status || "incomplete").trim();
-
+      const crit = safe.criteria || {};
       return {
         id: String(safe.id || "").trim(),
         flow: String(safe.flow || "").trim(),
@@ -535,58 +494,32 @@
         description: String(safe.description || "").trim(),
         start: safe.start || safe.end || formatDate(new Date()),
         end: safe.end || safe.start || formatDate(new Date()),
-        status,
-        criteria: normalizeCriteria(safe.criteria)
+        progress: Number.isFinite(Number(safe.progress)) ? Number(safe.progress) : 0,
+        criteria: {
+          variable: String(crit.variable || "").trim(),
+          type: crit.type || "",
+          operator: crit.operator || "",
+          value: crit.value != null ? String(crit.value) : ""
+        }
       };
     }
 
-    function computeBarClass(t) {
-      const status = (t.status || "").toLowerCase();
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const startDate = new Date(t.start);
-      const endDate = new Date(t.end);
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setHours(0, 0, 0, 0);
-
-      const msPerDay = 24 * 60 * 60 * 1000;
-      const daysUntilEnd = Math.round((endDate - today) / msPerDay);
-
-      const isComplete = status === "complete";
-      const isIncomplete = status === "incomplete";
-
-      if (startDate > today) {
-        return "bar-future";
-      }
-
-      if (!isComplete && daysUntilEnd <= 2 && daysUntilEnd >= 0) {
-        return "bar-danger";
-      }
-
-      if (isComplete) {
-        return "bar-complete";
-      }
-
-      if (isIncomplete) {
-        return "bar-incomplete";
-      }
-
-      return "";
+    // new: visible tasks based on currentFlowFilter
+    function getVisibleTasks() {
+      if (!currentFlowFilter) return tasks;
+      return tasks.filter(t => (t.flow || "") === currentFlowFilter);
     }
 
     function toFrappeTasks() {
-      return tasks.map(t => ({
+      return getVisibleTasks().map(t => ({
         id: t.id,
         name: t.name || t.id,
         start: t.start,
         end: t.end,
-        progress: (t.status || "").toLowerCase() === "complete" ? 0 : 0,
+        progress: t.progress,
         flow: t.flow,
         description: t.description,
-        status: t.status,
-        criteria: clone(t.criteria || []),
-        custom_class: computeBarClass(t)
+        criteria: clone(t.criteria || {})
       }));
     }
 
@@ -614,59 +547,21 @@
         }
       } catch (err) {
         console.error("loadTasksFromServer failed", err);
+        // fallback demo
         if (!tasks.length) {
           const today = new Date();
           tasks = [
             normalizeTask({
               id: "T101",
-              flow: "Design",
+              flow: "Kickoff",
               name: "Project kickoff",
               description: "Initial planning and stakeholder sync",
               start: formatDate(today),
               end: formatDate(new Date(today.getTime() + 4 * 86400000)),
-              status: "incomplete",
-              criteria: []
+              progress: 40
             })
           ];
         }
-      }
-    }
-
-    async function loadFlowsIntoSelect() {
-      const flowSelect = $("#taskFlow");
-      if (!flowSelect) return;
-
-      try {
-        const res = await fetch("/api/flows");
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const flows = await res.json();
-        flowSelect.innerHTML = '<option value="">Select flow</option>';
-        flows.forEach(flow => {
-          const opt = document.createElement("option");
-          opt.value = flow;
-          opt.textContent = flow;
-          flowSelect.appendChild(opt);
-        });
-      } catch (err) {
-        console.error("Failed to load flows", err);
-      }
-    }
-
-    async function ensureFlowColumns(flow) {
-      if (!flow) return [];
-      if (flowColumnsCache[flow]) {
-        return flowColumnsCache[flow];
-      }
-      try {
-        const res = await fetch("/api/columns?flow=" + encodeURIComponent(flow));
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const cols = await res.json();
-        flowColumnsCache[flow] = Array.isArray(cols) ? cols : [];
-        return flowColumnsCache[flow];
-      } catch (err) {
-        console.error("Failed to load columns for flow", flow, err);
-        flowColumnsCache[flow] = [];
-        return [];
       }
     }
 
@@ -685,7 +580,13 @@
             t.start = formatDate(start);
             t.end = formatDate(end);
             saveTasksToServer();
-            renderGantt();
+          }
+        },
+        on_progress_change: (task, progress) => {
+          const t = tasks.find(x => x.id === task.id);
+          if (t) {
+            t.progress = progress;
+            saveTasksToServer();
           }
         },
         on_view_change: mode => {
@@ -697,35 +598,29 @@
           const deadline = task.end || (task._end && formatDate(task._end)) || "";
           const flow = task.flow || "";
           const desc = task.description || "";
-          const critList = Array.isArray(task.criteria) ? task.criteria : [];
+          const crit = task.criteria || {};
           const parts = [];
 
-          critList.forEach((c, idx) => {
-            const name = c.taskCriteriaName || c.name || "";
-            const datatype = c.taskCriteriaDatatype || c.type || "any";
-            const op = c.operator || "";
-            const val = c.value || "";
-            if (name || op || val) {
-              parts.push(
-                `<dt>Criteria ${idx + 1}</dt><dd>${name} ${op} <code>${val}</code> [${datatype}]</dd>`
-              );
-            }
-          });
-
-          const safeDesc = desc
-            .replace(/</g, "&lt;")
-            .replace(/\n/g, "<br>");
+          if (crit.variable || crit.operator || crit.value) {
+            parts.push(
+              `<dt>Completion criteria</dt><dd>${crit.variable || ""} ${
+                crit.operator || ""
+              } <code>${crit.value || ""}</code> [${crit.type || "any"}]</dd>`
+            );
+          }
 
           return `
             <div class="details-container">
               <h5>${task.name}</h5>
               <div class="meta">
                 ID: ${task.id}${flow ? " • Flow: " + flow.replace(/</g, "&lt;") : ""}
-                ${task.status ? " • Status: " + String(task.status).replace(/</g, "&lt;") : ""}
               </div>
               <dl>
                 <dt>Deadline</dt><dd>${deadline}</dd>
-                <dt>Description</dt><dd>${safeDesc}</dd>
+                <dt>Progress</dt><dd>${task.progress || 0}%</dd>
+                <dt>Description</dt><dd>${desc
+                  .replace(/</g, "&lt;")
+                  .replace(/\n/g, "<br>")}</dd>
                 ${parts.join("")}
               </dl>
             </div>
@@ -765,175 +660,29 @@
       }
     }
 
-    // -------- Criteria UI helpers --------
-
-    function createCriteriaRow(criteria, columns) {
-      const row = document.createElement("div");
-      row.className = "criteria-row";
-
-      const nameSelect = document.createElement("select");
-      nameSelect.className = "crit-name";
-      const emptyOpt = document.createElement("option");
-      emptyOpt.value = "";
-      emptyOpt.textContent = "Criteria name";
-      nameSelect.appendChild(emptyOpt);
-      (columns || []).forEach(col => {
-        const opt = document.createElement("option");
-        opt.value = col;
-        opt.textContent = col;
-        nameSelect.appendChild(opt);
-      });
-
-      const typeSelect = document.createElement("select");
-      typeSelect.className = "crit-type";
-      typeSelect.innerHTML = `
-        <option value="number">Number</option>
-        <option value="string">String</option>
-        <option value="boolean">Boolean</option>
-      `;
-
-      const opSelect = document.createElement("select");
-      opSelect.className = "crit-op";
-      opSelect.innerHTML = `
-        <option value="<">&lt;</option>
-        <option value="<=">&lt;=</option>
-        <option value=">">&gt;</option>
-        <option value=">=">&gt;=</option>
-        <option value="==">==</option>
-        <option value="!=">!=</option>
-      `;
-
-      const valueInput = document.createElement("input");
-      valueInput.className = "crit-value";
-      valueInput.type = "text";
-      valueInput.placeholder = "Value";
-
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.textContent = "×";
-      removeBtn.addEventListener("click", () => {
-        row.remove();
-      });
-
-      row.appendChild(nameSelect);
-      row.appendChild(typeSelect);
-      row.appendChild(opSelect);
-      row.appendChild(valueInput);
-      row.appendChild(removeBtn);
-
-      if (criteria) {
-        if (criteria.taskCriteriaName) {
-          nameSelect.value = criteria.taskCriteriaName;
-        }
-        if (criteria.taskCriteriaDatatype) {
-          typeSelect.value = criteria.taskCriteriaDatatype;
-        }
-        if (criteria.operator) {
-          opSelect.value = criteria.operator;
-        }
-        if (criteria.value) {
-          valueInput.value = criteria.value;
-        }
-      }
-
-      return row;
-    }
-
-    async function renderCriteriaList(criteriaArray) {
-      const container = $("#criteriaList");
-      if (!container) return;
-      container.innerHTML = "";
-
-      const flow = $("#taskFlow").value;
-      const columns = flow ? await ensureFlowColumns(flow) : [];
-
-      const list = Array.isArray(criteriaArray) && criteriaArray.length
-        ? criteriaArray
-        : [null];
-
-      list.forEach(c => {
-        const row = createCriteriaRow(c, columns);
-        container.appendChild(row);
-      });
-    }
-
-    async function refreshCriteriaNameOptions() {
-      const flow = $("#taskFlow").value;
-      if (!flow) return;
-
-      const columns = await ensureFlowColumns(flow);
-      $$(".criteria-row .crit-name").forEach(select => {
-        const oldValue = select.value;
-        select.innerHTML = "";
-        const emptyOpt = document.createElement("option");
-        emptyOpt.value = "";
-        emptyOpt.textContent = "Criteria name";
-        select.appendChild(emptyOpt);
-        columns.forEach(col => {
-          const opt = document.createElement("option");
-          opt.value = col;
-          opt.textContent = col;
-          select.appendChild(opt);
-        });
-        if (oldValue && columns.includes(oldValue)) {
-          select.value = oldValue;
-        }
-      });
-    }
-
-    // -------- Form helpers --------
-
-    async function loadTaskIntoForm(taskId) {
+    function loadTaskIntoForm(taskId) {
       const t = tasks.find(x => x.id === taskId);
       if (!t) return;
 
       $("#taskId").value = t.id;
+      $("#taskFlow").value = t.flow || "";
       $("#taskName").value = t.name || "";
       $("#taskDesc").value = t.description || "";
       $("#startDate").value = t.start || "";
       $("#endDate").value = t.end || "";
+      $("#taskProgress").value = t.progress != null ? t.progress : 0;
 
-      const flowSelect = $("#taskFlow");
-      if (flowSelect) {
-        flowSelect.value = t.flow || "";
-        if (t.flow) {
-          await ensureFlowColumns(t.flow);
-        }
-      }
-
-      await renderCriteriaList(t.criteria || []);
+      const crit = t.criteria || {};
+      $("#critVar").value = crit.variable || "";
+      $("#critType").value = crit.type || "";
+      $("#critOp").value = crit.operator || "";
+      $("#critValue").value = crit.value || "";
     }
 
     function clearForm() {
       const form = $("#taskForm");
       if (form) form.reset();
-      const criteriaList = $("#criteriaList");
-      if (criteriaList) criteriaList.innerHTML = "";
-    }
-
-    function gatherCriteriaFromForm() {
-      const rows = $$(".criteria-row");
-      const result = [];
-
-      rows.forEach(row => {
-        const name = row.querySelector(".crit-name")?.value.trim() || "";
-        const datatype = row.querySelector(".crit-type")?.value || "";
-        const op = row.querySelector(".crit-op")?.value || "";
-        const val = row.querySelector(".crit-value")?.value.trim() || "";
-
-        if (!name && !datatype && !op && !val) {
-          return;
-        }
-
-        result.push({
-          taskCriteriaName: name,
-          taskCriteriaDatatype: datatype,
-          operator: op,
-          value: val
-        });
-      });
-
-      return result;
+      $("#taskProgress").value = 0;
     }
 
     function gatherTaskFromForm() {
@@ -943,6 +692,7 @@
       const desc = $("#taskDesc").value.trim();
       const startRaw = $("#startDate").value;
       const endRaw = $("#endDate").value;
+      const progressRaw = $("#taskProgress").value;
 
       if (!id) throw new Error("Task ID is required");
       if (!name) throw new Error("Task name is required");
@@ -953,10 +703,14 @@
         throw new Error("Start date must be before or equal to deadline");
       }
 
-      const existing = tasks.find(t => t.id === id);
-      const status = existing && existing.status ? existing.status : "incomplete";
+      const progress = Math.max(0, Math.min(100, Number(progressRaw || 0)));
 
-      const criteria = gatherCriteriaFromForm();
+      const criteria = {
+        variable: $("#critVar").value.trim(),
+        type: $("#critType").value,
+        operator: $("#critOp").value,
+        value: $("#critValue").value.trim()
+      };
 
       return normalizeTask({
         id,
@@ -965,7 +719,7 @@
         description: desc,
         start,
         end: endRaw,
-        status,
+        progress,
         criteria
       });
     }
@@ -974,6 +728,7 @@
       const idx = tasks.findIndex(t => t.id === newTask.id);
       if (idx >= 0) tasks[idx] = newTask;
       else tasks.push(newTask);
+      populateFlowFilterOptions(); // new
       saveTasksToServer();
       renderGantt();
     }
@@ -982,6 +737,7 @@
       const idx = tasks.findIndex(t => t.id === id);
       if (idx < 0) return;
       tasks.splice(idx, 1);
+      populateFlowFilterOptions(); // new
       saveTasksToServer();
       renderGantt();
     }
@@ -997,8 +753,34 @@
       URL.revokeObjectURL(url);
     }
 
-    // -------- Event wiring --------
+    // new: populate unique flows into the filter select
+    function populateFlowFilterOptions() {
+      const select = $("#flowFilter");
+      if (!select) return;
 
+      const previous = select.value;
+      const flows = Array.from(
+        new Set(
+          tasks
+            .map(t => (t.flow || "").trim())
+            .filter(f => f.length > 0)
+        )
+      ).sort();
+
+      select.innerHTML =
+        '<option value="">All flows</option>' +
+        flows.map(f => `<option value="${f}">${f}</option>`).join("");
+
+      if (previous && flows.includes(previous)) {
+        select.value = previous;
+        currentFlowFilter = previous;
+      } else {
+        select.value = "";
+        currentFlowFilter = "";
+      }
+    }
+
+    // Event wiring
     const formEl = $("#taskForm");
     if (formEl) {
       formEl.addEventListener("submit", evt => {
@@ -1009,7 +791,6 @@
           if (existing && !confirm("Task ID exists. Update it?")) return;
           upsertTask(t);
           clearForm();
-          renderCriteriaList([]);
         } catch (err) {
           alert(err.message || String(err));
         }
@@ -1017,10 +798,7 @@
     }
 
     const clearBtn = $("#clearBtn");
-    if (clearBtn) clearBtn.addEventListener("click", () => {
-      clearForm();
-      renderCriteriaList([]);
-    });
+    if (clearBtn) clearBtn.addEventListener("click", clearForm);
 
     const deleteBtn = $("#deleteBtn");
     if (deleteBtn) {
@@ -1033,7 +811,6 @@
         if (!confirm(`Delete task ${id}?`)) return;
         deleteTaskById(id);
         clearForm();
-        renderCriteriaList([]);
       });
     }
 
@@ -1044,6 +821,7 @@
     if (reloadBtn) {
       reloadBtn.addEventListener("click", async () => {
         await loadTasksFromServer();
+        populateFlowFilterOptions(); // new
         renderGantt();
       });
     }
@@ -1066,31 +844,19 @@
       });
     }
 
-    const addCriteriaBtn = $("#addCriteriaBtn");
-    if (addCriteriaBtn) {
-      addCriteriaBtn.addEventListener("click", async () => {
-        const flow = $("#taskFlow").value;
-        const columns = flow ? await ensureFlowColumns(flow) : [];
-        const container = $("#criteriaList");
-        if (!container) return;
-        const row = createCriteriaRow(null, columns);
-        container.appendChild(row);
+    // new: flow filter change
+    const flowFilterEl = $("#flowFilter");
+    if (flowFilterEl) {
+      flowFilterEl.addEventListener("change", () => {
+        currentFlowFilter = flowFilterEl.value || "";
+        renderGantt();
       });
     }
 
-    const flowSelect = $("#taskFlow");
-    if (flowSelect) {
-      flowSelect.addEventListener("change", async () => {
-        await refreshCriteriaNameOptions();
-      });
-    }
-
-    // -------- bootstrap --------
-
+    // bootstrap
     (async function init() {
-      await loadFlowsIntoSelect();
       await loadTasksFromServer();
-      await renderCriteriaList([]);
+      populateFlowFilterOptions(); // new
       renderGantt();
     })();
   </script>
