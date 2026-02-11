@@ -1,14 +1,22 @@
 """
-Tkinter Pivot Table Builder (auto-load on startup, auto-save on close)
-- No Save/Load buttons. Uses a single config file: pivot_config.json
-  - Loads it automatically when the app opens (if present)
-  - Saves it automatically when the app closes
+Tkinter Pivot Table Builder
 
-Everything else stays:
-- Base dir + keyword -> load CSVs into DF
-- Pivot fields (Values/Index/Columns) with mutual exclusion + ordered selection
-- aggfunc dropdown
-- Rail grouping: search, assign groups, undo, reset
+Changes included (per your request)
+1) Undo Selected Group button
+   - Shows a Groups list (group name + count)
+   - Select a group -> click "Undo Selected Group" -> all rails in that group become unassigned again
+
+2) When user clicks "Load Reports to DataFrame"
+   - If Base Directory is different from the last loaded base directory,
+     it clears existing rail groupings (rail_to_group, group_names, undo stack)
+     before loading the new DF.
+
+3) If pconfig.json doesn't exist on startup
+   - Preselect:
+     Values  = ["leakage"]
+     Index   = ["block", "state", "rail", "voltage"]
+     Columns = ["corner"]
+     aggfunc = "sum"
 """
 
 import os
@@ -23,15 +31,16 @@ import pandas as pd
 
 
 DF_COLUMNS = ["block", "state", "voltage", "rail", "corner", "dynamic", "leakage", "total"]
-PIVOT_CHOICES = DF_COLUMNS[:]
+PIVOT_CHOICES = DF_COLUMNS[:]  # checkbox options
 
-# Config file saved in the same folder as this script (fallback: current working dir)
+
 def get_config_path() -> str:
+    # Save next to the script (fallback to CWD)
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
     except Exception:
         script_dir = os.getcwd()
-    return os.path.join(script_dir, "pivot_config.json")
+    return os.path.join(script_dir, "pconfig.json")
 
 
 def read_reports_from_folders(base_dir: str, start_keyword: str) -> pd.DataFrame:
@@ -54,17 +63,14 @@ def read_reports_from_folders(base_dir: str, start_keyword: str) -> pd.DataFrame
         csv_files.extend(glob.glob(os.path.join(f, "**", "*.csv"), recursive=True))
 
     if not csv_files:
-        raise FileNotFoundError(
-            f"Found {len(folders)} folder(s) but no CSV files inside them."
-        )
+        raise FileNotFoundError(f"Found {len(folders)} folder(s) but no CSV files inside them.")
 
     dfs: List[pd.DataFrame] = []
     errors: List[Tuple[str, str]] = []
 
     for path in csv_files:
         try:
-            df = pd.read_csv(path)
-            dfs.append(df)
+            dfs.append(pd.read_csv(path))
         except Exception as e:
             errors.append((path, str(e)))
 
@@ -91,8 +97,7 @@ class SelectionState:
 
     def add_to_bucket(self, bucket: str, field_name: str) -> None:
         self.remove_from_all(field_name)
-        lst: List[str] = getattr(self, bucket)
-        lst.append(field_name)
+        getattr(self, bucket).append(field_name)
 
     def ordered_tuple(self) -> Tuple[List[str], List[str], List[str]]:
         return (self.values[:], self.index[:], self.columns[:])
@@ -102,34 +107,38 @@ class PivotBuilderApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Pivot Table Builder")
-        self.geometry("1180x760")
+        self.geometry("1220x780")
 
         self.config_path = get_config_path()
+
         self.df: Optional[pd.DataFrame] = None
 
-        # Rail grouping mapping: original rail value -> group name
+        # Rail grouping
         self.rail_to_group: Dict[str, str] = {}
         self.group_names: List[str] = []
-        self.group_undo_stack: List[Dict[str, object]] = []
+        self.group_undo_stack: List[Dict[str, object]] = []  # last operations
 
         self.all_rails: List[str] = []
         self.available_rails: List[str] = []
 
+        # Tracks last loaded base directory (for auto-clearing groupings)
+        self.last_loaded_base_dir: str = ""
+
+        # Pivot selection
         self.sel_state = SelectionState()
 
-        # Tk variables
+        # Tk vars
         self.base_dir_var = tk.StringVar()
         self.keyword_var = tk.StringVar()
         self.output_dir_var = tk.StringVar()
         self.file_name_var = tk.StringVar(value="pivot_output")
         self.aggfunc_var = tk.StringVar(value="sum")
 
-        # Checkbutton variables per bucket
+        # Checkbox vars and widgets
         self.values_vars: Dict[str, tk.BooleanVar] = {}
         self.index_vars: Dict[str, tk.BooleanVar] = {}
         self.columns_vars: Dict[str, tk.BooleanVar] = {}
 
-        # Checkbutton widgets per bucket (for enable/disable)
         self.values_checks: Dict[str, ttk.Checkbutton] = {}
         self.index_checks: Dict[str, ttk.Checkbutton] = {}
         self.columns_checks: Dict[str, ttk.Checkbutton] = {}
@@ -138,8 +147,8 @@ class PivotBuilderApp(tk.Tk):
 
         self._build_ui()
 
-        # Auto-load config after UI exists
-        self._load_config_on_startup()
+        # Auto-load config OR apply defaults
+        self._load_config_or_apply_defaults()
 
         # Auto-save on close
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -181,6 +190,7 @@ class PivotBuilderApp(tk.Tk):
         right = ttk.Frame(mid)
         right.pack(side="right", fill="both", expand=True, padx=(10, 0))
 
+        # Pivot selector
         pivot_box = ttk.LabelFrame(left, text="2) Pivot Fields (mutually exclusive, ordered by click)", padding=10)
         pivot_box.pack(fill="both", expand=True)
 
@@ -201,6 +211,7 @@ class PivotBuilderApp(tk.Tk):
         self.selection_preview.pack(fill="x", pady=(10, 0))
         self.selection_preview.configure(state="disabled")
 
+        # Rail grouping
         group_box = ttk.LabelFrame(right, text='3) Rail Grouping (df["rail"])', padding=10)
         group_box.pack(fill="both", expand=True)
 
@@ -229,12 +240,22 @@ class PivotBuilderApp(tk.Tk):
         ttk.Button(btn_col, text="Clear Selection", command=self._clear_rail_selection).pack(fill="x", pady=2)
         ttk.Button(btn_col, text="Assign to Group", command=self._assign_selected_rails_to_group).pack(fill="x", pady=10)
         ttk.Button(btn_col, text="Undo Last Group", command=self._undo_last_group).pack(fill="x", pady=2)
+        ttk.Button(btn_col, text="Undo Selected Group", command=self._undo_selected_group).pack(fill="x", pady=2)
         ttk.Button(btn_col, text="Reset Grouping", command=self._reset_grouping).pack(fill="x", pady=2)
 
-        mapping_box = ttk.LabelFrame(group_box, text="Assigned mapping (rail => group)", padding=8)
-        mapping_box.pack(fill="both", expand=True, pady=(10, 0))
+        mapping_area = ttk.Frame(group_box)
+        mapping_area.pack(fill="both", expand=True, pady=(10, 0))
 
-        self.mapping_listbox = tk.Listbox(mapping_box)
+        groups_box = ttk.LabelFrame(mapping_area, text="Groups (select one)", padding=8)
+        groups_box.pack(side="left", fill="both", expand=True, padx=(0, 6))
+
+        self.groups_listbox = tk.Listbox(groups_box, height=10)
+        self.groups_listbox.pack(fill="both", expand=True)
+
+        mapping_box = ttk.LabelFrame(mapping_area, text="Assigned mapping (rail => group)", padding=8)
+        mapping_box.pack(side="left", fill="both", expand=True, padx=(6, 0))
+
+        self.mapping_listbox = tk.Listbox(mapping_box, height=10)
         self.mapping_listbox.pack(fill="both", expand=True)
 
         self.status_var = tk.StringVar(value="Ready.")
@@ -242,6 +263,8 @@ class PivotBuilderApp(tk.Tk):
 
         self._init_checkboxes()
         self._refresh_selection_preview()
+        self._refresh_groups_list()
+        self._refresh_mapping_list()
 
     def _build_bucket(self, parent: ttk.Frame, title: str, col: int):
         frame = ttk.LabelFrame(parent, text=title, padding=8)
@@ -306,6 +329,7 @@ class PivotBuilderApp(tk.Tk):
         checked = vars_map[field_name].get()
 
         if checked:
+            # Uncheck in other buckets if needed
             for other in ("values", "index", "columns"):
                 if other == bucket:
                     continue
@@ -313,8 +337,10 @@ class PivotBuilderApp(tk.Tk):
                 if other_vars[field_name].get():
                     other_vars[field_name].set(False)
 
+            # Add to ordered selection
             self.sel_state.add_to_bucket(bucket, field_name)
 
+            # Disable this field in other buckets
             self._set_field_enabled_in_bucket("values", field_name, bucket == "values")
             self._set_field_enabled_in_bucket("index", field_name, bucket == "index")
             self._set_field_enabled_in_bucket("columns", field_name, bucket == "columns")
@@ -343,6 +369,42 @@ class PivotBuilderApp(tk.Tk):
         self.selection_preview.insert("end", text)
         self.selection_preview.configure(state="disabled")
 
+    def _reset_pivot_ui(self):
+        # Reset all pivot checkbox state and enable everything
+        self.sel_state = SelectionState(values=[], index=[], columns=[])
+        for f in PIVOT_CHOICES:
+            self.values_vars[f].set(False)
+            self.index_vars[f].set(False)
+            self.columns_vars[f].set(False)
+            self._set_field_enabled_in_bucket("values", f, True)
+            self._set_field_enabled_in_bucket("index", f, True)
+            self._set_field_enabled_in_bucket("columns", f, True)
+        self._refresh_selection_preview()
+
+    def _apply_pivot_defaults(self):
+        # Defaults if config missing:
+        # Values: leakage
+        # Index : block, state, rail, voltage
+        # Columns: corner
+        self._reset_pivot_ui()
+        self.aggfunc_var.set("sum")
+
+        def apply_bucket(bucket_name: str, fields: List[str]):
+            vars_map = {"values": self.values_vars, "index": self.index_vars, "columns": self.columns_vars}[bucket_name]
+            for f in fields:
+                if f not in PIVOT_CHOICES:
+                    continue
+                vars_map[f].set(True)
+                self.sel_state.add_to_bucket(bucket_name, f)
+                self._set_field_enabled_in_bucket("values", f, bucket_name == "values")
+                self._set_field_enabled_in_bucket("index", f, bucket_name == "index")
+                self._set_field_enabled_in_bucket("columns", f, bucket_name == "columns")
+
+        apply_bucket("values", ["leakage"])
+        apply_bucket("index", ["block", "state", "rail", "voltage"])
+        apply_bucket("columns", ["corner"])
+        self._refresh_selection_preview()
+
     # ---------------- DF loading ----------------
     def _load_df(self):
         base = self.base_dir_var.get().strip()
@@ -354,6 +416,12 @@ class PivotBuilderApp(tk.Tk):
         if not kw:
             messagebox.showerror("Missing", "Please enter Start keyword.")
             return
+
+        # Clear rail groupings if base dir changed from previous load
+        if self.last_loaded_base_dir and os.path.abspath(base) != os.path.abspath(self.last_loaded_base_dir):
+            if self.rail_to_group or self.group_names or self.group_undo_stack:
+                self._reset_grouping(silent=True)
+                self._set_status("Base directory changed. Cleared existing rail groupings.")
 
         try:
             self._set_status("Loading reports into dataframe...")
@@ -369,11 +437,13 @@ class PivotBuilderApp(tk.Tk):
                 )
 
             self.df = df
+            self.last_loaded_base_dir = base
+
             self._set_status(f"Loaded DF: {len(df):,} rows, {len(df.columns)} columns.")
             messagebox.showinfo("Loaded", f"Loaded dataframe with {len(df):,} rows.")
 
-            # If grouping loaded from config, recompute available rails now
-            if self.df is not None and "rail" in self.df.columns:
+            # Recompute rail lists if DF has rail
+            if "rail" in df.columns:
                 self._recompute_available_rails_from_df()
 
         except Exception as e:
@@ -384,13 +454,18 @@ class PivotBuilderApp(tk.Tk):
     # ---------------- Rail grouping ----------------
     def _recompute_available_rails_from_df(self):
         if self.df is None or "rail" not in self.df.columns:
+            self.all_rails = []
+            self.available_rails = []
+            self._refresh_rail_list()
             return
+
         unique_rails = sorted([str(x) for x in self.df["rail"].dropna().unique().tolist()])
         self.all_rails = unique_rails
         assigned = set(self.rail_to_group.keys())
         self.available_rails = [r for r in unique_rails if r not in assigned]
         self._refresh_rail_list()
         self._refresh_mapping_list()
+        self._refresh_groups_list()
 
     def _init_rail_list_from_df(self):
         if self.df is None:
@@ -399,27 +474,12 @@ class PivotBuilderApp(tk.Tk):
         if "rail" not in self.df.columns:
             messagebox.showerror("Missing column", 'Dataframe does not contain column "rail".')
             return
-
-        unique_rails = sorted([str(x) for x in self.df["rail"].dropna().unique().tolist()])
-        if not unique_rails:
-            messagebox.showwarning("Empty", 'No non-empty values found in df["rail"].')
-            return
-
-        self.all_rails = unique_rails
-        assigned = set(self.rail_to_group.keys())
-        self.available_rails = [r for r in unique_rails if r not in assigned]
-
-        self._refresh_rail_list()
-        self._refresh_mapping_list()
-        self._set_status(f'Loaded {len(unique_rails)} unique rails. Unassigned: {len(self.available_rails)}.')
+        self._recompute_available_rails_from_df()
+        self._set_status(f'Loaded {len(self.all_rails)} unique rails. Unassigned: {len(self.available_rails)}.')
 
     def _refresh_rail_list(self):
         q = self.rail_search_var.get().strip().lower()
-        if q:
-            display = [r for r in self.available_rails if q in r.lower()]
-        else:
-            display = self.available_rails[:]
-
+        display = [r for r in self.available_rails if q in r.lower()] if q else self.available_rails[:]
         self.rail_listbox.delete(0, "end")
         for r in display:
             self.rail_listbox.insert("end", r)
@@ -434,6 +494,17 @@ class PivotBuilderApp(tk.Tk):
         self.mapping_listbox.delete(0, "end")
         for rail_val in sorted(self.rail_to_group.keys()):
             self.mapping_listbox.insert("end", f"{rail_val} => {self.rail_to_group[rail_val]}")
+
+    def _refresh_groups_list(self):
+        # Build group -> count using current mapping
+        counts: Dict[str, int] = {}
+        for g in self.rail_to_group.values():
+            counts[g] = counts.get(g, 0) + 1
+
+        groups_sorted = sorted(counts.keys())
+        self.groups_listbox.delete(0, "end")
+        for g in groups_sorted:
+            self.groups_listbox.insert("end", f"{g} ({counts[g]})")
 
     def _assign_selected_rails_to_group(self):
         if not self.available_rails:
@@ -450,6 +521,7 @@ class PivotBuilderApp(tk.Tk):
         if not group_name:
             return
 
+        # Undo record for this operation
         self.group_undo_stack.append({"group": group_name, "rails": selected_vals[:]})
 
         for rail_val in selected_vals:
@@ -460,6 +532,7 @@ class PivotBuilderApp(tk.Tk):
 
         self._refresh_rail_list()
         self._refresh_mapping_list()
+        self._refresh_groups_list()
 
         if not self.available_rails:
             self._set_status("All rails assigned to groups.")
@@ -546,16 +619,57 @@ class PivotBuilderApp(tk.Tk):
         self.available_rails = sorted(self.available_rails)
         self._refresh_rail_list()
         self._refresh_mapping_list()
+        self._refresh_groups_list()
         self._set_status(f"Undo: restored {removed} rail(s) back to unassigned.")
 
-    def _reset_grouping(self):
+    def _undo_selected_group(self):
+        sel = self.groups_listbox.curselection()
+        if not sel:
+            messagebox.showwarning("Undo Selected Group", "Select a group from the Groups list first.")
+            return
+
+        line = self.groups_listbox.get(sel[0])  # format: "GROUP (N)"
+        group_name = line.rsplit(" (", 1)[0].strip()
+        if not group_name:
+            return
+
+        # Collect all rails assigned to this group
+        rails_to_undo = [r for r, g in self.rail_to_group.items() if g == group_name]
+        if not rails_to_undo:
+            messagebox.showinfo("Undo Selected Group", f"No rails found for group '{group_name}'.")
+            return
+
+        # Push into undo stack as one operation (so user can still use Undo Last Group)
+        self.group_undo_stack.append({"group": group_name, "rails": rails_to_undo[:]})
+
+        # Remove mapping
+        for r in rails_to_undo:
+            if r in self.rail_to_group:
+                del self.rail_to_group[r]
+
+        # Restore to available
+        existing = set(self.available_rails)
+        for r in rails_to_undo:
+            if r not in existing:
+                self.available_rails.append(r)
+                existing.add(r)
+        self.available_rails = sorted(self.available_rails)
+
+        self._refresh_rail_list()
+        self._refresh_mapping_list()
+        self._refresh_groups_list()
+        self._set_status(f"Undid group '{group_name}' ({len(rails_to_undo)} rail(s) restored).")
+
+    def _reset_grouping(self, silent: bool = False):
         self.rail_to_group.clear()
         self.group_names.clear()
         self.group_undo_stack.clear()
         self.available_rails = self.all_rails[:] if self.all_rails else []
         self._refresh_rail_list()
         self._refresh_mapping_list()
-        self._set_status("Grouping reset.")
+        self._refresh_groups_list()
+        if not silent:
+            self._set_status("Grouping reset.")
 
     # ---------------- Pivot creation ----------------
     def _create_pivot(self):
@@ -637,6 +751,7 @@ class PivotBuilderApp(tk.Tk):
                 "group_names": list(self.group_names),
                 "undo_stack": list(self.group_undo_stack),
             },
+            "last_loaded_base_dir": self.last_loaded_base_dir,
         }
 
     def _apply_config_dict(self, cfg: dict):
@@ -645,21 +760,15 @@ class PivotBuilderApp(tk.Tk):
         self.output_dir_var.set(cfg.get("output_dir", ""))
         self.file_name_var.set(cfg.get("file_name", "pivot_output"))
 
+        self.last_loaded_base_dir = cfg.get("last_loaded_base_dir", "") or ""
+
         pivot = cfg.get("pivot", {}) or {}
         values = list(pivot.get("values", []) or [])
         index = list(pivot.get("index", []) or [])
         columns = list(pivot.get("columns", []) or [])
         self.aggfunc_var.set(pivot.get("aggfunc", "sum") or "sum")
 
-        # Reset pivot UI state
-        self.sel_state = SelectionState(values=[], index=[], columns=[])
-        for f in PIVOT_CHOICES:
-            self.values_vars[f].set(False)
-            self.index_vars[f].set(False)
-            self.columns_vars[f].set(False)
-            self._set_field_enabled_in_bucket("values", f, True)
-            self._set_field_enabled_in_bucket("index", f, True)
-            self._set_field_enabled_in_bucket("columns", f, True)
+        self._reset_pivot_ui()
 
         def apply_bucket(bucket_name: str, fields: List[str]):
             vars_map = {"values": self.values_vars, "index": self.index_vars, "columns": self.columns_vars}[bucket_name]
@@ -681,27 +790,26 @@ class PivotBuilderApp(tk.Tk):
         self.rail_to_group = dict(rg.get("rail_to_group", {}) or {})
         self.group_names = list(rg.get("group_names", []) or [])
         self.group_undo_stack = list(rg.get("undo_stack", []) or [])
+
         self._refresh_mapping_list()
+        self._refresh_groups_list()
 
-        # If DF already loaded, recompute available rails
-        if self.df is not None and "rail" in self.df.columns:
-            self._recompute_available_rails_from_df()
-
-    def _load_config_on_startup(self):
+    def _load_config_or_apply_defaults(self):
         if not os.path.isfile(self.config_path):
-            self._set_status(f"Ready. (No config found at {self.config_path})")
+            self._apply_pivot_defaults()
+            self._set_status(f"Ready. (No pconfig.json found, applied default pivot selections)")
             return
 
         try:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
             self._apply_config_dict(cfg)
-            self._set_status(f"Loaded config: {self.config_path}")
+            self._set_status("Loaded config from pconfig.json")
         except Exception as e:
-            self._set_status("Ready. (Config load failed)")
+            self._apply_pivot_defaults()
             messagebox.showwarning(
                 "Config load failed",
-                f"Could not load config file:\n\n{self.config_path}\n\nReason:\n{e}"
+                f"Could not load pconfig.json.\nDefaults applied.\n\nReason:\n{e}",
             )
 
     def _save_config_on_close(self):
@@ -710,11 +818,11 @@ class PivotBuilderApp(tk.Tk):
             tmp_path = self.config_path + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, indent=2)
-            os.replace(tmp_path, self.config_path)  # atomic replace
+            os.replace(tmp_path, self.config_path)
         except Exception as e:
             messagebox.showwarning(
                 "Config save failed",
-                f"Could not save config file:\n\n{self.config_path}\n\nReason:\n{e}"
+                f"Could not save:\n{self.config_path}\n\nReason:\n{e}",
             )
 
     def _on_close(self):
@@ -723,6 +831,7 @@ class PivotBuilderApp(tk.Tk):
 
 
 if __name__ == "__main__":
+    # Better scaling on Windows if possible
     try:
         from ctypes import windll  # type: ignore
         windll.shcore.SetProcessDpiAwareness(1)
