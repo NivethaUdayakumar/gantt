@@ -1,0 +1,1455 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pivot Builder</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 14px; background: #f7f7f7; }
+    h1 { margin: 0 0 12px 0; font-size: 20px; }
+    h2 { margin: 0 0 10px 0; font-size: 16px; }
+    h3 { margin: 0 0 8px 0; font-size: 14px; }
+    label { font-size: 13px; }
+    button { padding: 8px 10px; cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 10px; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    select { padding: 6px; border-radius: 10px; border: 1px solid #ccc; }
+    input[type="text"] { padding: 6px; border-radius: 10px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; }
+
+    .layout { display: grid; grid-template-columns: 1fr 1.2fr; gap: 12px; align-items: start; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 12px; background: #fff; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .small { font-size: 12px; color: #444; }
+    .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .cols3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .bucket { border: 1px solid #eee; border-radius: 12px; padding: 10px; background: #fcfcfc; }
+    .mono { font-family: ui-monospace, Menlo, Monaco, Consolas, "Courier New", monospace; font-size: 12px; white-space: pre-wrap; }
+    .status { margin-top: 10px; padding: 10px; border: 1px solid #eee; border-radius: 12px; background: #fafafa; }
+
+    .tabs { display: flex; gap: 6px; border-bottom: 1px solid #eee; margin-bottom: 10px; }
+    .tabBtn { border: 1px solid #ddd; border-bottom: none; background: #f6f6f6; padding: 8px 10px; border-radius: 12px 12px 0 0; cursor: pointer; }
+    .tabBtn.active { background: #fff; font-weight: 600; }
+    .tabPane { display: none; }
+    .tabPane.active { display: block; }
+
+    .tableWrap { max-height: 520px; overflow: auto; border: 1px solid #eee; border-radius: 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { border: 1px solid #eee; padding: 6px; text-align: left; white-space: nowrap; }
+    th { position: sticky; top: 0; background: #fafafa; z-index: 1; }
+
+    .listrow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .listbox { width: 100%; min-height: 170px; border-radius: 12px; border: 1px solid #ddd; padding: 6px; }
+
+    dialog { border: 1px solid #ccc; border-radius: 12px; padding: 12px; max-width: 520px; width: 95%; }
+
+    .chartRow { width: 100%; }
+    .chartGrid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; width: 100%; }
+    .chartCanvasWrap { width: 100%; }
+    .chartCanvasWrap canvas { width: 100% !important; height: 100% !important; background: #fff; border: 1px solid #eee; border-radius: 12px; }
+  </style>
+</head>
+
+<body>
+  <h1>Pivot Builder</h1>
+
+  <div class="layout">
+    <div class="card">
+      <h2>CSV Maker</h2>
+
+      <div class="grid2">
+        <div>
+          <label for="baseDirInput">Base directory path</label><br />
+          <input id="baseDirInput" type="text" placeholder="Example C:\reports or /home/user/reports" />
+          <div class="small" id="baseDirHint">Server will scan immediate subdirectories and merge all csv under matched folders</div>
+        </div>
+
+        <div>
+          <label for="unitsSelect">Units</label><br />
+          <select id="unitsSelect" style="width:100%;">
+            <option value="W" selected>W</option>
+            <option value="mW">mW</option>
+          </select>
+          <div class="small">If mW, numeric values are multiplied by 1000 in raw and pivot</div>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <div>
+          <label for="startKeywordInput">Start keyword</label><br />
+          <input id="startKeywordInput" type="text" placeholder="Example v23, empty means all" />
+        </div>
+        <div>
+          <label for="fileNameInput">CSV file name</label><br />
+          <input id="fileNameInput" type="text" placeholder="pivot_output" />
+        </div>
+
+        <div>
+          <label for="aggFuncSelect">aggfunc</label><br />
+          <select id="aggFuncSelect" style="width:100%;">
+            <option value="sum">sum</option>
+            <option value="mean">mean</option>
+            <option value="min">min</option>
+            <option value="max">max</option>
+            <option value="count">count</option>
+            <option value="size">size</option>
+            <option value="first">first</option>
+            <option value="last">last</option>
+          </select>
+        </div>
+        <div>
+          <div class="small" style="margin-top:18px;">
+            State is saved in local storage.
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button id="loadReportsBtn">Load reports</button>
+        <button id="createPivotBtn">Create pivot CSV</button>
+        <span class="small" id="dfInfoLabel"></span>
+      </div>
+
+      <div class="card" style="border-color:#eee; margin-top:12px;">
+        <h3>Values</h3>
+        <div class="checks" id="valuesBox"></div>
+      </div>
+
+      <div class="card" style="border-color:#eee; margin-top:12px;">
+        <h3>Index and Columns</h3>
+        <div class="small" style="margin-bottom:10px;">Index and Columns are mutually exclusive. Order follows selection.</div>
+
+        <div class="cols3">
+          <div class="bucket">
+            <h3 style="margin-bottom:6px;">Index</h3>
+            <div class="checks" id="indexBox"></div>
+          </div>
+
+          <div class="bucket">
+            <h3 style="margin-bottom:6px;">Columns</h3>
+            <div class="checks" id="columnsBox"></div>
+          </div>
+
+          <div class="bucket">
+            <h3 style="margin-bottom:6px;">Selections</h3>
+            <div class="mono" id="selectionText"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="border-color:#eee; margin-top:12px;">
+        <h3>Rail grouping</h3>
+
+        <div class="row">
+          <label for="railSearchInput">Search</label>
+          <input id="railSearchInput" type="text" placeholder="Filter rails" style="width:220px;" />
+          <button id="loadRailsBtn">Load rails</button>
+          <button id="selectAllRailsBtn">Select all</button>
+          <button id="clearRailsBtn">Clear</button>
+          <button id="assignGroupBtn">Assign group</button>
+          <button id="undoLastGroupBtn">Undo last</button>
+          <button id="undoSelectedGroupBtn">Undo selected group</button>
+          <button id="resetGroupingBtn">Reset</button>
+        </div>
+
+        <div class="listrow" style="margin-top:10px;">
+          <div>
+            <div class="small">Available rails</div>
+            <select id="railList" class="listbox" multiple></select>
+          </div>
+          <div>
+            <div class="small">Groups</div>
+            <select id="groupList" class="listbox" size="9"></select>
+            <div class="small" style="margin-top:8px;">Mapping</div>
+            <select id="mappingList" class="listbox" multiple style="min-height: 90px;"></select>
+          </div>
+        </div>
+
+        <div class="small" style="margin-top:8px;">
+          Pivot rule. If any rail grouping exists, rows whose rail is not mapped are excluded from pivot.
+        </div>
+      </div>
+
+      <div class="status">
+        <div id="statusLabel">Ready</div>
+        <div class="small" id="apiLabel"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Viewer</h2>
+
+      <div class="tabs">
+        <button class="tabBtn active" data-tab="rawTab">Raw data</button>
+        <button class="tabBtn" data-tab="pivotTab">Pivot table</button>
+        <button class="tabBtn" data-tab="chartsTab">Charts</button>
+      </div>
+
+      <div id="rawTab" class="tabPane active">
+        <div class="row">
+          <strong>Raw preview</strong>
+          <span class="small" id="rawMeta"></span>
+          <label class="small">Rows</label>
+          <select id="rawRowsSelect">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="250">250</option>
+          </select>
+        </div>
+        <div class="tableWrap" style="margin-top:8px;">
+          <table>
+            <thead id="rawHead"></thead>
+            <tbody id="rawBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="pivotTab" class="tabPane">
+        <div class="row">
+          <strong>Pivot preview</strong>
+          <span class="small" id="pivotMeta"></span>
+          <label class="small">Rows</label>
+          <select id="pivotRowsSelect">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="250">250</option>
+          </select>
+        </div>
+        <div class="tableWrap" style="margin-top:8px;">
+          <table>
+            <thead id="pivotHead"></thead>
+            <tbody id="pivotBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="chartsTab" class="tabPane">
+        <div class="row">
+          <strong>Pivot charts</strong>
+          <span class="small">Each pivot row is one line. Legend is at the bottom.</span>
+        </div>
+
+        <div class="card" style="border-color:#eee; margin-top:10px;">
+          <div class="row">
+            <label for="chartMode">Mode</label>
+            <select id="chartMode">
+              <option value="together">One chart</option>
+              <option value="separate">Three charts</option>
+            </select>
+
+            <span class="small">Metrics</span>
+            <label class="small"><input type="checkbox" id="metricLeakage" checked /> leakage</label>
+            <label class="small"><input type="checkbox" id="metricDynamic" /> dynamic</label>
+            <label class="small"><input type="checkbox" id="metricTotal" /> total</label>
+
+            <button id="previewChartsBtn">Preview</button>
+            <button id="downloadChartsBtn">Download</button>
+          </div>
+        </div>
+
+        <div id="chartsArea" style="margin-top:10px;">
+          <div id="singleChartWrap" class="chartRow">
+            <div class="chartCanvasWrap">
+              <canvas id="singleChartCanvas"></canvas>
+            </div>
+          </div>
+
+          <div id="threeChartWrap" class="chartGrid3" style="display:none;">
+            <div class="chartCanvasWrap"><canvas id="leakageChartCanvas"></canvas></div>
+            <div class="chartCanvasWrap"><canvas id="dynamicChartCanvas"></canvas></div>
+            <div class="chartCanvasWrap"><canvas id="totalChartCanvas"></canvas></div>
+          </div>
+        </div>
+
+        <div class="small" id="chartDebug" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="groupDialog">
+    <form method="dialog" id="groupForm">
+      <h3 style="margin:0;">Assign rails to group</h3>
+
+      <div class="row" style="margin-top:10px;">
+        <label for="existingGroupsSelect">Existing</label>
+        <select id="existingGroupsSelect" style="min-width: 220px;"></select>
+        <button value="useExisting">Use</button>
+      </div>
+
+      <div class="row">
+        <label for="newGroupNameInput">New</label>
+        <input id="newGroupNameInput" type="text" placeholder="Example CORE" style="width: 240px;" />
+        <button value="createNew">Create</button>
+      </div>
+
+      <div class="row" style="justify-content:flex-end; margin-top:10px;">
+        <button value="cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const VALUES_FIELDS = ["leakage", "dynamic", "total"];
+    const AXIS_FIELDS = ["block", "voltage", "state", "rail", "corner"];
+    const CANONICAL_FIELDS = [...VALUES_FIELDS, ...AXIS_FIELDS];
+
+    const STATE_KEY = "pivot_builder_state_v2";
+
+    const ui = {
+      baseDirInput: document.getElementById("baseDirInput"),
+      unitsSelect: document.getElementById("unitsSelect"),
+
+      startKeywordInput: document.getElementById("startKeywordInput"),
+      fileNameInput: document.getElementById("fileNameInput"),
+      aggFuncSelect: document.getElementById("aggFuncSelect"),
+
+      loadReportsBtn: document.getElementById("loadReportsBtn"),
+      createPivotBtn: document.getElementById("createPivotBtn"),
+      dfInfoLabel: document.getElementById("dfInfoLabel"),
+
+      valuesBox: document.getElementById("valuesBox"),
+      indexBox: document.getElementById("indexBox"),
+      columnsBox: document.getElementById("columnsBox"),
+      selectionText: document.getElementById("selectionText"),
+
+      railSearchInput: document.getElementById("railSearchInput"),
+      loadRailsBtn: document.getElementById("loadRailsBtn"),
+      selectAllRailsBtn: document.getElementById("selectAllRailsBtn"),
+      clearRailsBtn: document.getElementById("clearRailsBtn"),
+      assignGroupBtn: document.getElementById("assignGroupBtn"),
+      undoLastGroupBtn: document.getElementById("undoLastGroupBtn"),
+      undoSelectedGroupBtn: document.getElementById("undoSelectedGroupBtn"),
+      resetGroupingBtn: document.getElementById("resetGroupingBtn"),
+
+      railList: document.getElementById("railList"),
+      groupList: document.getElementById("groupList"),
+      mappingList: document.getElementById("mappingList"),
+
+      statusLabel: document.getElementById("statusLabel"),
+      apiLabel: document.getElementById("apiLabel"),
+
+      rawHead: document.getElementById("rawHead"),
+      rawBody: document.getElementById("rawBody"),
+      rawMeta: document.getElementById("rawMeta"),
+      rawRowsSelect: document.getElementById("rawRowsSelect"),
+
+      pivotHead: document.getElementById("pivotHead"),
+      pivotBody: document.getElementById("pivotBody"),
+      pivotMeta: document.getElementById("pivotMeta"),
+      pivotRowsSelect: document.getElementById("pivotRowsSelect"),
+
+      groupDialog: document.getElementById("groupDialog"),
+      groupForm: document.getElementById("groupForm"),
+      existingGroupsSelect: document.getElementById("existingGroupsSelect"),
+      newGroupNameInput: document.getElementById("newGroupNameInput"),
+
+      chartMode: document.getElementById("chartMode"),
+      metricLeakage: document.getElementById("metricLeakage"),
+      metricDynamic: document.getElementById("metricDynamic"),
+      metricTotal: document.getElementById("metricTotal"),
+      previewChartsBtn: document.getElementById("previewChartsBtn"),
+      downloadChartsBtn: document.getElementById("downloadChartsBtn"),
+
+      singleChartWrap: document.getElementById("singleChartWrap"),
+      threeChartWrap: document.getElementById("threeChartWrap"),
+
+      singleChartCanvas: document.getElementById("singleChartCanvas"),
+      leakageChartCanvas: document.getElementById("leakageChartCanvas"),
+      dynamicChartCanvas: document.getElementById("dynamicChartCanvas"),
+      totalChartCanvas: document.getElementById("totalChartCanvas"),
+
+      chartDebug: document.getElementById("chartDebug"),
+    };
+
+    const app = {
+      rawRows: [],
+      rawColumns: [],
+      pivotResult: { headers: [], rows: [] },
+
+      selections: { values: [], index: [], columns: [] },
+      checkboxes: { values: new Map(), index: new Map(), columns: new Map() },
+
+      grouping: {
+        allRails: [],
+        availableRails: [],
+        railToGroup: {},
+        groupNames: [],
+        undoStack: []
+      },
+
+      charts: { together: null, leak: null, dyn: null, tot: null }
+    };
+
+    function setStatus(text) { ui.statusLabel.textContent = text; }
+    function deepCopy(x) { return JSON.parse(JSON.stringify(x)); }
+
+    function unitScale() {
+      return ui.unitsSelect.value === "mW" ? 1000 : 1;
+    }
+
+    function normalizeRail(v) {
+      const s = String(v ?? "").trim();
+      return s;
+    }
+
+    function normalizedRailMap() {
+      const out = {};
+      for (const [k, v] of Object.entries(app.grouping.railToGroup || {})) {
+        const kk = normalizeRail(k);
+        const vv = String(v ?? "").trim();
+        if (kk && vv) out[kk] = vv;
+      }
+      return out;
+    }
+
+    function buildCaseMapFromHeaders(headers) {
+      const m = new Map();
+      for (const h of (headers || [])) m.set(String(h).toLowerCase(), String(h));
+      return m;
+    }
+
+    function normalizeRowToCanonical(row, headerCaseMap) {
+      const out = { ...row };
+
+      for (const f of CANONICAL_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(out, f)) continue;
+
+        const srcKey = headerCaseMap.get(String(f).toLowerCase());
+        if (!srcKey) continue;
+
+        if (srcKey !== f && Object.prototype.hasOwnProperty.call(out, srcKey)) {
+          out[f] = out[srcKey];
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(out, "rail")) out.rail = normalizeRail(out.rail);
+      return out;
+    }
+
+    function getRailFromRow(row) {
+      if (!row) return "";
+      if (Object.prototype.hasOwnProperty.call(row, "rail")) return normalizeRail(row.rail);
+      if (Object.prototype.hasOwnProperty.call(row, "Rail")) return normalizeRail(row.Rail);
+      if (Object.prototype.hasOwnProperty.call(row, "RAIL")) return normalizeRail(row.RAIL);
+      return "";
+    }
+
+    function getStateObject() {
+      return {
+        baseDir: ui.baseDirInput.value,
+        units: ui.unitsSelect.value,
+        startKeyword: ui.startKeywordInput.value.trim(),
+        fileName: ui.fileNameInput.value.trim(),
+        aggFunc: ui.aggFuncSelect.value,
+        selections: deepCopy(app.selections),
+        grouping: {
+          railToGroup: deepCopy(app.grouping.railToGroup),
+          groupNames: [...app.grouping.groupNames],
+          undoStack: deepCopy(app.grouping.undoStack)
+        },
+        chartUi: {
+          chartMode: ui.chartMode.value,
+          metricLeakage: ui.metricLeakage.checked,
+          metricDynamic: ui.metricDynamic.checked,
+          metricTotal: ui.metricTotal.checked
+        }
+      };
+    }
+
+    function saveState() {
+      localStorage.setItem(STATE_KEY, JSON.stringify(getStateObject()));
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STATE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+
+    function applyDefaultsIfNoState() {
+      ui.baseDirInput.value = "";
+      ui.unitsSelect.value = "W";
+      ui.startKeywordInput.value = "";
+      ui.fileNameInput.value = "pivot_output";
+      ui.aggFuncSelect.value = "sum";
+
+      clearSelections();
+
+      setValueChecked("leakage", true);
+      setAxisChecked("index", "block", true);
+      setAxisChecked("index", "state", true);
+      setAxisChecked("index", "rail", true);
+      setAxisChecked("index", "voltage", true);
+      setAxisChecked("columns", "corner", true);
+
+      app.grouping.railToGroup = {};
+      app.grouping.groupNames = [];
+      app.grouping.undoStack = [];
+      refreshGroupingUi();
+
+      ui.chartMode.value = "together";
+      ui.metricLeakage.checked = true;
+      ui.metricDynamic.checked = false;
+      ui.metricTotal.checked = false;
+
+      saveState();
+    }
+
+    function applyStateObject(st) {
+      ui.baseDirInput.value = st.baseDir || "";
+      ui.unitsSelect.value = st.units || "W";
+      ui.startKeywordInput.value = st.startKeyword || "";
+      ui.fileNameInput.value = st.fileName || "pivot_output";
+      ui.aggFuncSelect.value = st.aggFunc || "sum";
+
+      clearSelections();
+
+      const sel = st.selections || {};
+      (sel.values || []).forEach(v => { if (VALUES_FIELDS.includes(v)) setValueChecked(v, true); });
+      (sel.index || []).forEach(f => { if (AXIS_FIELDS.includes(f)) setAxisChecked("index", f, true); });
+      (sel.columns || []).forEach(f => { if (AXIS_FIELDS.includes(f)) setAxisChecked("columns", f, true); });
+
+      const grp = st.grouping || {};
+      app.grouping.railToGroup = grp.railToGroup || {};
+      app.grouping.groupNames = grp.groupNames || [];
+      app.grouping.undoStack = grp.undoStack || [];
+      refreshGroupingUi();
+
+      const cu = st.chartUi || {};
+      ui.chartMode.value = cu.chartMode || "together";
+      ui.metricLeakage.checked = !!cu.metricLeakage;
+      ui.metricDynamic.checked = !!cu.metricDynamic;
+      ui.metricTotal.checked = !!cu.metricTotal;
+
+      renderSelectionText();
+      saveState();
+    }
+
+    function renderSelectionText() {
+      ui.selectionText.textContent =
+        "Values " + JSON.stringify(app.selections.values) + "\n" +
+        "Index " + JSON.stringify(app.selections.index) + "\n" +
+        "Columns " + JSON.stringify(app.selections.columns);
+    }
+
+    function clearSelections() {
+      app.selections.values = [];
+      app.selections.index = [];
+      app.selections.columns = [];
+
+      for (const v of VALUES_FIELDS) {
+        const cb = app.checkboxes.values.get(v);
+        if (cb) cb.checked = false;
+      }
+
+      for (const f of AXIS_FIELDS) {
+        const a = app.checkboxes.index.get(f);
+        const b = app.checkboxes.columns.get(f);
+        if (a) { a.checked = false; a.disabled = false; }
+        if (b) { b.checked = false; b.disabled = false; }
+      }
+
+      renderSelectionText();
+    }
+
+    function onValuesChanged(field) {
+      const cb = app.checkboxes.values.get(field);
+      const checked = cb.checked;
+      const arr = app.selections.values;
+      const pos = arr.indexOf(field);
+
+      if (checked) {
+        if (pos >= 0) arr.splice(pos, 1);
+        arr.push(field);
+      } else {
+        if (pos >= 0) arr.splice(pos, 1);
+      }
+
+      renderSelectionText();
+      saveState();
+    }
+
+    function onAxisChanged(bucket, field) {
+      const cb = app.checkboxes[bucket].get(field);
+      const checked = cb.checked;
+      const other = bucket === "index" ? "columns" : "index";
+
+      if (checked) {
+        const otherCb = app.checkboxes[other].get(field);
+        otherCb.checked = false;
+        otherCb.disabled = true;
+
+        const otherArr = app.selections[other];
+        const oi = otherArr.indexOf(field);
+        if (oi >= 0) otherArr.splice(oi, 1);
+
+        const arr = app.selections[bucket];
+        const i = arr.indexOf(field);
+        if (i >= 0) arr.splice(i, 1);
+        arr.push(field);
+      } else {
+        app.checkboxes[other].get(field).disabled = false;
+        const arr = app.selections[bucket];
+        const i = arr.indexOf(field);
+        if (i >= 0) arr.splice(i, 1);
+      }
+
+      renderSelectionText();
+      saveState();
+    }
+
+    function setValueChecked(field, checked) {
+      const cb = app.checkboxes.values.get(field);
+      cb.checked = checked;
+      onValuesChanged(field);
+    }
+
+    function setAxisChecked(bucket, field, checked) {
+      const cb = app.checkboxes[bucket].get(field);
+      cb.checked = checked;
+      onAxisChanged(bucket, field);
+    }
+
+    function renderSelectionCheckboxes() {
+      ui.valuesBox.innerHTML = "";
+      ui.indexBox.innerHTML = "";
+      ui.columnsBox.innerHTML = "";
+
+      for (const v of VALUES_FIELDS) {
+        const label = document.createElement("label");
+        label.style.display = "flex";
+        label.style.gap = "6px";
+        label.style.alignItems = "center";
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.addEventListener("change", () => onValuesChanged(v));
+
+        const span = document.createElement("span");
+        span.textContent = v;
+
+        label.appendChild(cb);
+        label.appendChild(span);
+        ui.valuesBox.appendChild(label);
+
+        app.checkboxes.values.set(v, cb);
+      }
+
+      function addAxis(container, bucket) {
+        for (const f of AXIS_FIELDS) {
+          const label = document.createElement("label");
+          label.style.display = "flex";
+          label.style.gap = "6px";
+          label.style.alignItems = "center";
+
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.addEventListener("change", () => onAxisChanged(bucket, f));
+
+          const span = document.createElement("span");
+          span.textContent = f;
+
+          label.appendChild(cb);
+          label.appendChild(span);
+          container.appendChild(label);
+
+          app.checkboxes[bucket].set(f, cb);
+        }
+      }
+
+      addAxis(ui.indexBox, "index");
+      addAxis(ui.columnsBox, "columns");
+
+      renderSelectionText();
+    }
+
+    function wireTabs() {
+      const buttons = Array.from(document.querySelectorAll(".tabBtn"));
+      const panes = Array.from(document.querySelectorAll(".tabPane"));
+
+      for (const b of buttons) {
+        b.addEventListener("click", () => {
+          buttons.forEach(x => x.classList.remove("active"));
+          panes.forEach(p => p.classList.remove("active"));
+          b.classList.add("active");
+          document.getElementById(b.dataset.tab).classList.add("active");
+        });
+      }
+    }
+
+    function inferColumns(rows) {
+      const s = new Set();
+      for (const r of rows.slice(0, 200)) Object.keys(r).forEach(k => s.add(k));
+      return Array.from(s);
+    }
+
+    function renderTable(headEl, bodyEl, metaEl, rows, columns, maxRows) {
+      headEl.innerHTML = "";
+      bodyEl.innerHTML = "";
+
+      const trh = document.createElement("tr");
+      for (const c of columns) {
+        const th = document.createElement("th");
+        th.textContent = c;
+        trh.appendChild(th);
+      }
+      headEl.appendChild(trh);
+
+      const showN = Math.min(rows.length, maxRows);
+      for (let i = 0; i < showN; i++) {
+        const tr = document.createElement("tr");
+        const row = rows[i];
+        for (const c of columns) {
+          const td = document.createElement("td");
+          const v = Object.prototype.hasOwnProperty.call(row, c) ? row[c] : "";
+          td.textContent = v === undefined || v === null ? "" : String(v);
+          tr.appendChild(td);
+        }
+        bodyEl.appendChild(tr);
+      }
+
+      metaEl.textContent = "Total rows " + rows.length + " Showing " + showN + " Total cols " + columns.length;
+    }
+
+    function renderRawPreview() {
+      renderTable(ui.rawHead, ui.rawBody, ui.rawMeta, app.rawRows, app.rawColumns, Number(ui.rawRowsSelect.value));
+    }
+
+    function renderPivotPreview() {
+      renderTable(ui.pivotHead, ui.pivotBody, ui.pivotMeta, app.pivotResult.rows, app.pivotResult.headers, Number(ui.pivotRowsSelect.value));
+    }
+
+    function multiplyNumericFields(rows, scale, valueFields) {
+      if (scale === 1) return rows;
+      const vf = new Set(valueFields);
+      return rows.map(r => {
+        const rr = { ...r };
+        for (const k of Object.keys(rr)) {
+          if (!vf.has(k)) continue;
+          const n = Number(rr[k]);
+          if (Number.isFinite(n)) rr[k] = n * scale;
+        }
+        return rr;
+      });
+    }
+
+    function computeRailsFromRawData() {
+      const rails = new Set();
+      for (const r of app.rawRows) {
+        const rr = getRailFromRow(r);
+        if (rr) rails.add(rr);
+      }
+      app.grouping.allRails = Array.from(rails).sort();
+
+      const assigned = new Set(Object.keys(app.grouping.railToGroup).map(normalizeRail));
+      app.grouping.availableRails = app.grouping.allRails.filter(x => !assigned.has(normalizeRail(x)));
+
+      refreshGroupingUi();
+    }
+
+    function refreshGroupingUi() {
+      refreshRailList();
+      refreshGroupList();
+      refreshMappingList();
+    }
+
+    function refreshRailList() {
+      const q = ui.railSearchInput.value.trim().toLowerCase();
+      const list = q ? app.grouping.availableRails.filter(r => r.toLowerCase().includes(q)) : [...app.grouping.availableRails];
+
+      ui.railList.innerHTML = "";
+      for (const r of list) {
+        const opt = document.createElement("option");
+        opt.value = r;
+        opt.textContent = r;
+        ui.railList.appendChild(opt);
+      }
+    }
+
+    function refreshGroupList() {
+      const counts = {};
+      for (const g of Object.values(app.grouping.railToGroup)) counts[g] = (counts[g] || 0) + 1;
+      const groups = Object.keys(counts).sort();
+
+      ui.groupList.innerHTML = "";
+      for (const g of groups) {
+        const opt = document.createElement("option");
+        opt.value = g;
+        opt.textContent = g + " (" + counts[g] + ")";
+        ui.groupList.appendChild(opt);
+      }
+
+      const merged = new Set([...(app.grouping.groupNames || []), ...groups]);
+      app.grouping.groupNames = Array.from(merged).sort();
+    }
+
+    function refreshMappingList() {
+      const keys = Object.keys(app.grouping.railToGroup).sort();
+      ui.mappingList.innerHTML = "";
+      for (const k of keys) {
+        const opt = document.createElement("option");
+        opt.value = k;
+        opt.textContent = k + " => " + app.grouping.railToGroup[k];
+        ui.mappingList.appendChild(opt);
+      }
+    }
+
+    function getSelectedOptions(selectEl) {
+      return Array.from(selectEl.selectedOptions).map(o => o.value);
+    }
+
+    function openGroupDialog() {
+      ui.existingGroupsSelect.innerHTML = "";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Select group";
+      ui.existingGroupsSelect.appendChild(empty);
+
+      for (const g of app.grouping.groupNames) {
+        const opt = document.createElement("option");
+        opt.value = g;
+        opt.textContent = g;
+        ui.existingGroupsSelect.appendChild(opt);
+      }
+
+      ui.newGroupNameInput.value = "";
+      ui.groupDialog.showModal();
+    }
+
+    function assignRailsToGroup(groupName, rails) {
+      if (!groupName) return;
+
+      app.grouping.undoStack.push({ group: groupName, rails: [...rails] });
+
+      for (const r of rails) app.grouping.railToGroup[normalizeRail(r)] = String(groupName).trim();
+
+      const chosen = new Set(rails.map(normalizeRail));
+      app.grouping.availableRails = app.grouping.availableRails.filter(r => !chosen.has(normalizeRail(r)));
+
+      if (!app.grouping.groupNames.includes(groupName)) {
+        app.grouping.groupNames.push(groupName);
+        app.grouping.groupNames.sort();
+      }
+
+      refreshGroupingUi();
+      saveState();
+    }
+
+    function onAssignGroupClicked() {
+      const rails = getSelectedOptions(ui.railList);
+      if (!rails.length) { alert("Select one or more rails"); return; }
+
+      openGroupDialog();
+
+      const handler = (ev) => {
+        ev.preventDefault();
+        const action = ev.submitter ? ev.submitter.value : "cancel";
+
+        if (action === "useExisting") {
+          const g = ui.existingGroupsSelect.value;
+          if (!g) { alert("Select an existing group"); return; }
+          ui.groupDialog.close();
+          assignRailsToGroup(g, rails);
+        } else if (action === "createNew") {
+          const g = ui.newGroupNameInput.value.trim();
+          if (!g) { alert("Enter a new group name"); return; }
+          ui.groupDialog.close();
+          assignRailsToGroup(g, rails);
+        } else {
+          ui.groupDialog.close();
+        }
+
+        ui.groupForm.removeEventListener("submit", handler);
+      };
+
+      ui.groupForm.addEventListener("submit", handler);
+    }
+
+    function onUndoLastGroup() {
+      const last = app.grouping.undoStack.pop();
+      if (!last) { alert("Nothing to undo"); return; }
+
+      const rails = Array.isArray(last.rails) ? last.rails : [];
+      for (const r of rails) delete app.grouping.railToGroup[normalizeRail(r)];
+
+      const existing = new Set(app.grouping.availableRails.map(normalizeRail));
+      for (const r of rails) {
+        const rr = normalizeRail(r);
+        if (!existing.has(rr)) app.grouping.availableRails.push(rr);
+      }
+      app.grouping.availableRails.sort();
+
+      refreshGroupingUi();
+      saveState();
+    }
+
+    function onUndoSelectedGroup() {
+      const selected = ui.groupList.value;
+      if (!selected) { alert("Select a group"); return; }
+
+      const rails = [];
+      for (const [rail, g] of Object.entries(app.grouping.railToGroup)) {
+        if (g === selected) rails.push(rail);
+      }
+      if (!rails.length) { alert("No rails in that group"); return; }
+
+      app.grouping.undoStack.push({ group: selected, rails: [...rails] });
+
+      for (const r of rails) delete app.grouping.railToGroup[normalizeRail(r)];
+
+      const existing = new Set(app.grouping.availableRails.map(normalizeRail));
+      for (const r of rails) {
+        const rr = normalizeRail(r);
+        if (!existing.has(rr)) app.grouping.availableRails.push(rr);
+      }
+      app.grouping.availableRails.sort();
+
+      refreshGroupingUi();
+      saveState();
+    }
+
+    function onResetGrouping() {
+      app.grouping.railToGroup = {};
+      app.grouping.groupNames = [];
+      app.grouping.undoStack = [];
+      app.grouping.availableRails = [...app.grouping.allRails];
+      refreshGroupingUi();
+      saveState();
+    }
+
+    function applyRailGroupingAndFilter(rows) {
+      const map = normalizedRailMap();
+      const useFilter = Object.keys(map).length > 0;
+
+      if (!useFilter) {
+        return rows.map(r => {
+          const rr = { ...r };
+          const railKey = getRailFromRow(rr);
+          if (railKey) rr.rail = railKey;
+          return rr;
+        });
+      }
+
+      const out = [];
+      for (const r of rows) {
+        const railKey = getRailFromRow(r);
+        const g = map[railKey];
+        if (!g) continue;
+        out.push({ ...r, rail: g });
+      }
+      return out;
+    }
+
+    function aggInit(aggFunc) {
+      if (aggFunc === "min") return Infinity;
+      if (aggFunc === "max") return -Infinity;
+      if (aggFunc === "first" || aggFunc === "last") return null;
+      return 0;
+    }
+
+    function aggStep(aggFunc, acc, value, seenCount) {
+      if (aggFunc === "count" || aggFunc === "size") return acc + 1;
+
+      const x = Number(value);
+      if (!Number.isFinite(x)) return acc;
+
+      if (aggFunc === "sum") return acc + x;
+      if (aggFunc === "mean") return acc + x;
+      if (aggFunc === "min") return Math.min(acc, x);
+      if (aggFunc === "max") return Math.max(acc, x);
+      if (aggFunc === "first") return seenCount === 0 ? x : acc;
+      if (aggFunc === "last") return x;
+
+      return acc + x;
+    }
+
+    function aggFinalize(aggFunc, acc, n, seen) {
+      if (aggFunc === "mean") return n ? acc / n : 0;
+      if (aggFunc === "min") return acc === Infinity ? 0 : acc;
+      if (aggFunc === "max") return acc === -Infinity ? 0 : acc;
+      if (aggFunc === "first") return acc === null ? 0 : acc;
+      if (aggFunc === "last") return acc === null ? 0 : acc;
+      if ((aggFunc === "count" || aggFunc === "size") && seen === 0) return 0;
+      return acc;
+    }
+
+    function makeKey(parts) {
+      return parts.map(v => String(v ?? "")).join("|||");
+    }
+
+    function buildPivot(rows, values, indexFields, columnFields, aggFunc) {
+      const indexKeys = new Set();
+      const columnKeys = new Set();
+      const cell = new Map();
+
+      for (const r of rows) {
+        const iKey = makeKey(indexFields.map(f => r[f]));
+        const cKey = columnFields.length ? makeKey(columnFields.map(f => r[f])) : "";
+        indexKeys.add(iKey);
+        columnKeys.add(cKey);
+
+        for (const valueField of values) {
+          const key = iKey + "###" + cKey + "###" + valueField;
+          const prev = cell.get(key) || { acc: aggInit(aggFunc), n: 0, seen: 0 };
+
+          const nextAcc = aggStep(aggFunc, prev.acc, r[valueField], prev.seen);
+          const nextN = (aggFunc === "count" || aggFunc === "size")
+            ? prev.n
+            : (prev.n + (Number.isFinite(Number(r[valueField])) ? 1 : 0));
+
+          cell.set(key, { acc: nextAcc, n: nextN, seen: prev.seen + 1 });
+        }
+      }
+
+      const indexList = Array.from(indexKeys).sort();
+      const columnList = Array.from(columnKeys).sort();
+
+      const headers = [...indexFields];
+      if (columnFields.length) {
+        for (const cKey of columnList) for (const vField of values) headers.push(cKey + " " + vField);
+      } else {
+        for (const vField of values) headers.push(vField);
+      }
+
+      const outRows = [];
+      for (const iKey of indexList) {
+        const parts = iKey.split("|||");
+        const rowOut = {};
+        indexFields.forEach((f, idx) => rowOut[f] = parts[idx] ?? "");
+
+        if (columnFields.length) {
+          for (const cKey of columnList) {
+            for (const vField of values) {
+              const key = iKey + "###" + cKey + "###" + vField;
+              const v = cell.get(key);
+              rowOut[cKey + " " + vField] = v ? aggFinalize(aggFunc, v.acc, v.n, v.seen) : 0;
+            }
+          }
+        } else {
+          for (const vField of values) {
+            const key = iKey + "###" + "" + "###" + vField;
+            const v = cell.get(key);
+            rowOut[vField] = v ? aggFinalize(aggFunc, v.acc, v.n, v.seen) : 0;
+          }
+        }
+
+        outRows.push(rowOut);
+      }
+
+      return { headers, rows: outRows };
+    }
+
+    function escapeCsvCell(x) {
+      const s = String(x ?? "");
+      if (s.includes('"') || s.includes(",") || s.includes("\n")) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+
+    function toCsvText(headers, rows) {
+      const lines = [];
+      lines.push(headers.map(escapeCsvCell).join(","));
+      for (const r of rows) lines.push(headers.map(h => escapeCsvCell(r[h])).join(","));
+      return lines.join("\n");
+    }
+
+    function downloadTextFile(name, text, mime) {
+      const blob = new Blob([text], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    async function onLoadReports() {
+      const baseDir = ui.baseDirInput.value.trim();
+      const startKeyword = ui.startKeywordInput.value.trim();
+
+      if (!baseDir) { alert("Base directory path is required"); return; }
+
+      setStatus("Loading reports");
+      ui.chartDebug.textContent = "";
+
+      try {
+        const res = await fetch("/api/reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ baseDir, startKeyword })
+        });
+
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Load failed");
+
+        const scale = unitScale();
+
+        const serverHeaders = (data.headers && data.headers.length) ? data.headers : [];
+        const headerCaseMap = buildCaseMapFromHeaders(serverHeaders);
+
+        const scaledRows = multiplyNumericFields(data.rows || [], scale, VALUES_FIELDS);
+        app.rawRows = scaledRows.map(r => normalizeRowToCanonical(r, headerCaseMap));
+
+        app.rawColumns = (serverHeaders.length ? serverHeaders : inferColumns(app.rawRows)).map(h => {
+          const s = String(h);
+          const lc = s.toLowerCase();
+          if (lc === "rail") return "rail";
+          if (lc === "block") return "block";
+          if (lc === "voltage") return "voltage";
+          if (lc === "state") return "state";
+          if (lc === "corner") return "corner";
+          if (lc === "leakage") return "leakage";
+          if (lc === "dynamic") return "dynamic";
+          if (lc === "total") return "total";
+          return s;
+        });
+
+        ui.dfInfoLabel.textContent = "Rows " + app.rawRows.length + " Cols " + app.rawColumns.length;
+
+        ui.apiLabel.textContent =
+          "Matched folders " + (data.meta && data.meta.matchedFolders ? data.meta.matchedFolders.length : 0) +
+          " Csv " + (data.meta && data.meta.csvCount ? data.meta.csvCount : 0);
+
+        computeRailsFromRawData();
+        renderRawPreview();
+
+        app.pivotResult = { headers: [], rows: [] };
+        renderPivotPreview();
+        destroyCharts();
+
+        setStatus("Reports loaded");
+        saveState();
+      } catch (e) {
+        app.rawRows = [];
+        app.rawColumns = [];
+        ui.dfInfoLabel.textContent = "";
+        renderRawPreview();
+        setStatus("Load failed");
+        alert(String(e));
+      }
+    }
+
+    async function onCreatePivotCsv() {
+      if (!app.rawRows.length) { alert("Load reports first"); return; }
+      if (!app.selections.values.length) { alert("Select at least one values field"); return; }
+      if (!app.selections.index.length && !app.selections.columns.length) { alert("Select at least one index or columns field"); return; }
+
+      setStatus("Building pivot");
+      ui.chartDebug.textContent = "";
+
+      const rowsFiltered = applyRailGroupingAndFilter(app.rawRows);
+      const pivot = buildPivot(rowsFiltered, app.selections.values, app.selections.index, app.selections.columns, ui.aggFuncSelect.value);
+
+      app.pivotResult = pivot;
+      renderPivotPreview();
+      destroyCharts();
+
+      const csvText = toCsvText(pivot.headers, pivot.rows);
+      const fileName = ui.fileNameInput.value.trim() || "pivot_output";
+
+      downloadTextFile((fileName.toLowerCase().endsWith(".csv") ? fileName : (fileName + ".csv")), csvText, "text/csv;charset=utf-8");
+
+      setStatus("Pivot downloaded");
+      saveState();
+    }
+
+    function getSelectedMetrics() {
+      const out = [];
+      if (ui.metricLeakage.checked) out.push("leakage");
+      if (ui.metricDynamic.checked) out.push("dynamic");
+      if (ui.metricTotal.checked) out.push("total");
+      return out;
+    }
+
+    function splitHeaderToColumnAndMetric(headerText) {
+      const s = String(headerText);
+      const lastSpace = s.lastIndexOf(" ");
+      if (lastSpace <= 0) return { colKey: "", metric: s.toLowerCase() };
+      return { colKey: s.slice(0, lastSpace), metric: s.slice(lastSpace + 1).toLowerCase() };
+    }
+
+    function getPivotColumnKeysForMetric(metricName) {
+      const cols = new Set();
+      for (const h of app.pivotResult.headers || []) {
+        const parsed = splitHeaderToColumnAndMetric(h);
+        if (parsed.metric === metricName && parsed.colKey) cols.add(parsed.colKey);
+      }
+      return Array.from(cols).sort();
+    }
+
+    function makeIndexLabel(rowObj) {
+      const idxFields = app.selections.index || [];
+      if (!idxFields.length) return "row";
+      return idxFields.map(f => String(rowObj[f] ?? "")).join(" | ");
+    }
+
+    function destroyCharts() {
+      const c = app.charts;
+      [c.together, c.leak, c.dyn, c.tot].forEach(ch => { try { if (ch) ch.destroy(); } catch {} });
+      app.charts.together = null;
+      app.charts.leak = null;
+      app.charts.dyn = null;
+      app.charts.tot = null;
+    }
+
+    function computeChartMinHeight(datasetsCount) {
+      const base = 380;
+      const perLegendRow = 26;
+      const itemsPerRow = 6;
+      const legendRows = Math.max(1, Math.ceil(datasetsCount / itemsPerRow));
+      return base + (legendRows * perLegendRow);
+    }
+
+    function colorForIndex(i) {
+      const goldenAngle = 137.508;
+      const hue = (i * goldenAngle) % 360;
+      return "hsl(" + hue + " 70% 45%)";
+    }
+
+    function styleDataset(ds, i) {
+      const c = colorForIndex(i);
+      return {
+        ...ds,
+        borderColor: c,
+        backgroundColor: c,
+        pointRadius: 0,
+        pointHoverRadius: 3,
+        borderWidth: 2,
+        tension: 0.15
+      };
+    }
+
+    function makeLineChart(canvas, title, labels, datasets) {
+      const wrap = canvas.parentElement;
+      if (wrap && wrap.classList.contains("chartCanvasWrap")) {
+        wrap.style.minHeight = computeChartMinHeight(datasets.length) + "px";
+      }
+
+      return new Chart(canvas, {
+        type: "line",
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: {
+            title: { display: true, text: title },
+            legend: {
+              position: "bottom",
+              labels: { boxWidth: 12, padding: 12, font: { size: 11 } }
+            }
+          },
+          layout: { padding: { top: 10, bottom: 14, left: 10, right: 10 } },
+          scales: {
+            x: { ticks: { autoSkip: true, maxRotation: 0, minRotation: 0 } },
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function buildTogetherChart() {
+      const metrics = getSelectedMetrics();
+      if (!metrics.length) throw new Error("Select at least one metric");
+
+      const hasColumns = (app.selections.columns || []).length > 0;
+      const rows = app.pivotResult.rows || [];
+
+      if (hasColumns) {
+        const xSet = new Set();
+        for (const m of metrics) for (const x of getPivotColumnKeysForMetric(m)) xSet.add(x);
+        const xLabels = Array.from(xSet).sort();
+
+        const datasets = [];
+        for (const r of rows) {
+          const baseLabel = makeIndexLabel(r);
+          for (const m of metrics) {
+            const label = baseLabel + " " + m;
+            const data = xLabels.map(colKey => {
+              const key = colKey + " " + m;
+              const n = Number(r[key]);
+              return Number.isFinite(n) ? n : 0;
+            });
+            datasets.push({ label, data });
+          }
+        }
+
+        const styled = datasets.map((d, i) => styleDataset(d, i));
+        return { xLabels, datasets: styled, info: "X is column keys" };
+      }
+
+      const xLabels = metrics;
+      const datasets = rows.map(r => {
+        const label = makeIndexLabel(r);
+        const data = metrics.map(m => {
+          const n = Number(r[m]);
+          return Number.isFinite(n) ? n : 0;
+        });
+        return { label, data };
+      });
+
+      const styled = datasets.map((d, i) => styleDataset(d, i));
+      return { xLabels, datasets: styled, info: "X is metrics" };
+    }
+
+    function buildSingleMetricChart(metricName) {
+      const rows = app.pivotResult.rows || [];
+      const hasColumns = (app.selections.columns || []).length > 0;
+
+      if (hasColumns) {
+        const xLabels = getPivotColumnKeysForMetric(metricName);
+        const datasets = rows.map(r => {
+          const label = makeIndexLabel(r);
+          const data = xLabels.map(colKey => {
+            const key = colKey + " " + metricName;
+            const n = Number(r[key]);
+            return Number.isFinite(n) ? n : 0;
+          });
+          return { label, data };
+        });
+
+        const styled = datasets.map((d, i) => styleDataset(d, i));
+        return { xLabels, datasets: styled };
+      }
+
+      const xLabels = [metricName];
+      const datasets = rows.map(r => {
+        const label = makeIndexLabel(r);
+        const n = Number(r[metricName]);
+        return { label, data: [Number.isFinite(n) ? n : 0] };
+      });
+
+      const styled = datasets.map((d, i) => styleDataset(d, i));
+      return { xLabels, datasets: styled };
+    }
+
+    function onPreviewCharts() {
+      if (!app.pivotResult.rows.length) { alert("Create pivot first"); return; }
+
+      destroyCharts();
+
+      const mode = ui.chartMode.value;
+      ui.singleChartWrap.style.display = mode === "together" ? "block" : "none";
+      ui.threeChartWrap.style.display = mode === "separate" ? "grid" : "none";
+
+      if (mode === "together") {
+        const built = buildTogetherChart();
+        ui.chartDebug.textContent = built.info + " Lines " + built.datasets.length + " X " + built.xLabels.length;
+        app.charts.together = makeLineChart(ui.singleChartCanvas, "Pivot chart", built.xLabels, built.datasets);
+        return;
+      }
+
+      const leak = buildSingleMetricChart("leakage");
+      const dyn = buildSingleMetricChart("dynamic");
+      const tot = buildSingleMetricChart("total");
+
+      ui.chartDebug.textContent =
+        "Separate charts. Lines " + (app.pivotResult.rows || []).length +
+        " X leak " + leak.xLabels.length +
+        " X dyn " + dyn.xLabels.length +
+        " X tot " + tot.xLabels.length;
+
+      app.charts.leak = makeLineChart(ui.leakageChartCanvas, "leakage", leak.xLabels, leak.datasets);
+      app.charts.dyn = makeLineChart(ui.dynamicChartCanvas, "dynamic", dyn.xLabels, dyn.datasets);
+      app.charts.tot = makeLineChart(ui.totalChartCanvas, "total", tot.xLabels, tot.datasets);
+    }
+
+    function downloadCanvasPng(canvas, fileName) {
+      const url = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function onDownloadCharts() {
+      const mode = ui.chartMode.value;
+
+      if (mode === "together") {
+        if (!app.charts.together) { alert("Preview first"); return; }
+        downloadCanvasPng(ui.singleChartCanvas, "pivot_chart.png");
+        return;
+      }
+
+      if (!app.charts.leak || !app.charts.dyn || !app.charts.tot) { alert("Preview first"); return; }
+      downloadCanvasPng(ui.leakageChartCanvas, "leakage.png");
+      downloadCanvasPng(ui.dynamicChartCanvas, "dynamic.png");
+      downloadCanvasPng(ui.totalChartCanvas, "total.png");
+    }
+
+    function wireEvents() {
+      ui.baseDirInput.addEventListener("input", saveState);
+      ui.unitsSelect.addEventListener("change", () => {
+        saveState();
+        if (app.rawRows.length) onLoadReports();
+      });
+
+      ui.startKeywordInput.addEventListener("input", saveState);
+      ui.fileNameInput.addEventListener("input", saveState);
+      ui.aggFuncSelect.addEventListener("change", saveState);
+
+      ui.loadReportsBtn.addEventListener("click", onLoadReports);
+      ui.createPivotBtn.addEventListener("click", onCreatePivotCsv);
+
+      ui.rawRowsSelect.addEventListener("change", renderRawPreview);
+      ui.pivotRowsSelect.addEventListener("change", renderPivotPreview);
+
+      ui.loadRailsBtn.addEventListener("click", () => {
+        if (!app.rawRows.length) { alert("Load reports first"); return; }
+        computeRailsFromRawData();
+        setStatus("Rails loaded");
+      });
+
+      ui.railSearchInput.addEventListener("input", refreshRailList);
+
+      ui.selectAllRailsBtn.addEventListener("click", () => {
+        for (const opt of ui.railList.options) opt.selected = true;
+      });
+
+      ui.clearRailsBtn.addEventListener("click", () => {
+        for (const opt of ui.railList.options) opt.selected = false;
+      });
+
+      ui.assignGroupBtn.addEventListener("click", onAssignGroupClicked);
+      ui.undoLastGroupBtn.addEventListener("click", onUndoLastGroup);
+      ui.undoSelectedGroupBtn.addEventListener("click", onUndoSelectedGroup);
+      ui.resetGroupingBtn.addEventListener("click", onResetGrouping);
+
+      ui.chartMode.addEventListener("change", () => { saveState(); destroyCharts(); ui.chartDebug.textContent = ""; });
+      ui.metricLeakage.addEventListener("change", () => { saveState(); destroyCharts(); ui.chartDebug.textContent = ""; });
+      ui.metricDynamic.addEventListener("change", () => { saveState(); destroyCharts(); ui.chartDebug.textContent = ""; });
+      ui.metricTotal.addEventListener("change", () => { saveState(); destroyCharts(); ui.chartDebug.textContent = ""; });
+
+      ui.previewChartsBtn.addEventListener("click", () => { try { onPreviewCharts(); } catch (e) { alert(String(e)); } });
+      ui.downloadChartsBtn.addEventListener("click", onDownloadCharts);
+
+      window.addEventListener("beforeunload", () => saveState());
+    }
+
+    function startApp() {
+      renderSelectionCheckboxes();
+      wireTabs();
+      wireEvents();
+
+      const st = loadState();
+      if (st) applyStateObject(st);
+      else applyDefaultsIfNoState();
+
+      renderSelectionText();
+      setStatus("Ready");
+      ui.apiLabel.textContent = "API POST /api/reports";
+    }
+
+    startApp();
+  </script>
+</body>
+</html>
